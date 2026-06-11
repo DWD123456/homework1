@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
+    <title>展开与折叠 · AI精准分层作业（最终修正）</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            display: flex; justify-content: center; align-items: center; padding: 10px;
+        }
+        .container {
+            width: 100%; max-width: 600px; background: white; border-radius: 20px;
+            box-shadow: 0 15px 40px rgba(0,0,0,0.12); overflow: hidden;
+            margin: 0 auto;
+        }
+        .header { background: #4a6cf7; color: white; padding: 20px 20px; text-align: center; }
+        .header h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+        .header .sub { font-size: 13px; opacity: 0.9; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .ai-badge { background: rgba(255,255,255,0.25); border-radius: 20px; padding: 2px 10px; font-size: 11px; font-weight: 600; }
+        .progress-wrap { background: #eef2ff; padding: 10px 20px; display: flex; align-items: center; gap: 12px; }
+        .progress-text { font-size: 14px; font-weight: 600; color: #4a6cf7; white-space: nowrap; }
+        .progress-bar { flex: 1; height: 6px; background: #d9e1fa; border-radius: 10px; overflow: hidden; }
+        .progress-fill { height: 100%; width: 0%; background: #4a6cf7; border-radius: 10px; transition: width 0.3s ease; }
+        .main-content { padding: 15px; }
+        .question-card { display: none; animation: fadeIn 0.35s ease; }
+        .question-card.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .q-title { font-size: 16px; font-weight: 700; color: #1e293b; margin-bottom: 15px; line-height: 1.4; }
+        .difficulty-tag { display: inline-block; background: #eef2ff; color: #4a6cf7; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; }
+        .options { display: grid; gap: 12px; }
+        .option {
+            background: #f8fafc; border: 2px solid #e2e8f0; border-radius: 14px;
+            padding: 12px; display: flex; align-items: center; gap: 12px; cursor: pointer; transition: all 0.2s;
+        }
+        .option:hover { border-color: #4a6cf7; background: #f0f4ff; }
+        .option.selected { border-color: #4a6cf7; background: #eef2ff; box-shadow: 0 0 0 3px rgba(74,108,247,0.2); }
+        .option.correct-feedback { border-color: #22c55e; background: #f0fdf4; }
+        .option.wrong-feedback { border-color: #ef4444; background: #fef2f2; }
+        .option-label { font-weight: 700; font-size: 15px; color: #4a6cf7; width: 24px; }
+        .shape-grid { display: grid; gap: 2px; justify-content: start; }
+        .cell {
+            width: 24px; height: 24px; background: #cbd5e1; border-radius: 3px;
+            display: flex; align-items: center; justify-content: center; font-weight: bold;
+            font-size: 10px; color: white;
+        }
+        .cell.filled { background: #4a6cf7; box-shadow: 0 1px 4px rgba(74,108,247,0.3); }
+        .cell.text-cell { background: #eef2ff; color: #1e293b; font-size: 11px; font-weight: 700; }
+        .cell.highlight { background: #fbbf24; color: #1e293b; }
+
+        /* 连线题竖版布局 */
+        .match-vertical { display: flex; flex-direction: column; gap: 18px; }
+        .match-section { width: 100%; }
+        .match-section h3 { text-align: center; margin-bottom: 10px; color: #4a6cf7; font-size: 15px; }
+        .match-items-row {
+            display: flex; flex-wrap: wrap; justify-content: center; gap: 10px;
+        }
+        .match-item {
+            background: #f8fafc; border: 2px solid #e2e8f0; border-radius: 14px;
+            padding: 10px; text-align: center; cursor: pointer;
+            transition: all 0.2s; display: flex; flex-direction: column; align-items: center; gap: 6px;
+            flex: 1 1 140px; min-width: 130px; max-width: 180px;
+        }
+        .match-item:hover { border-color: #4a6cf7; background: #f0f4ff; }
+        .match-item.selected { border-color: #4a6cf7; background: #eef2ff; box-shadow: 0 0 0 3px rgba(74,108,247,0.3); }
+        .match-item.paired { border-color: #22c55e; background: #f0fdf4; cursor: default; }
+        .match-item.wrong-pair { border-color: #ef4444; background: #fef2f2; }
+        .match-pair-lines { text-align: center; margin: 8px 0; font-size: 13px; color: #64748b; min-height: 18px; }
+
+        .feedback-area {
+            margin-top: 15px; padding: 12px; border-radius: 12px;
+            display: none; font-size: 14px; line-height: 1.5; position: relative;
+        }
+        .feedback-area.show { display: block; }
+        .feedback-area.correct { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+        .feedback-area.wrong { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+        .redo-btn {
+            display: inline-block; margin-top: 10px; padding: 7px 16px; background: #fff;
+            border: 2px solid #4a6cf7; border-radius: 18px; font-size: 13px; font-weight: 600;
+            color: #4a6cf7; cursor: pointer; transition: all 0.2s;
+        }
+        .redo-btn:hover { background: #4a6cf7; color: white; }
+        .next-btn {
+            display: none; margin-top: 15px; padding: 12px 24px; background: #4a6cf7;
+            color: white; border: none; border-radius: 25px; font-size: 15px; font-weight: 700;
+            cursor: pointer; transition: background 0.2s; width: 100%; text-align: center;
+        }
+        .next-btn:hover { background: #3b5de7; }
+        .next-btn.show { display: block; }
+        .photo-upload-area {
+            background: #f1f5f9; border: 2px dashed #cbd5e1; border-radius: 14px;
+            padding: 20px; text-align: center; margin: 12px 0;
+        }
+        .photo-upload-area img { max-width: 160px; max-height: 160px; border-radius: 10px; margin-top: 8px; }
+        .upload-buttons { display: flex; gap: 8px; justify-content: center; margin-top: 8px; flex-wrap: wrap; }
+        .upload-btn {
+            padding: 8px 16px; background: #4a6cf7; color: white; border: none;
+            border-radius: 18px; cursor: pointer; font-size: 13px; font-weight: 600;
+        }
+        .upload-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .result-screen { display: none; text-align: center; padding: 20px; }
+        .result-screen.active { display: block; }
+        .score-circle {
+            width: 100px; height: 100px; border-radius: 50%; background: #eef2ff;
+            margin: 0 auto 15px; display: flex; align-items: center; justify-content: center;
+            font-size: 32px; font-weight: 800; color: #4a6cf7;
+        }
+        .radar-box { display: flex; justify-content: center; gap: 20px; margin: 20px 0; flex-wrap: wrap; }
+        .radar-item { text-align: center; }
+        .radar-label { font-size: 12px; color: #64748b; margin-bottom: 4px; }
+        .radar-bar { width: 60px; height: 6px; background: #e2e8f0; border-radius: 10px; overflow: hidden; }
+        .radar-fill { height: 100%; width: 0%; background: #4a6cf7; border-radius: 10px; transition: width 0.6s ease; }
+        .ai-comment { background: #f8fafc; border-radius: 14px; padding: 14px; margin-top: 15px; font-style: italic; color: #334155; font-size: 14px; }
+
+        @media (max-width: 480px) {
+            .match-item { flex: 1 1 120px; min-width: 110px; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>📦 展开与折叠 · AI精准分层</h1>
+        <div class="sub">
+            <span>自适应课后作业</span>
+            <span class="ai-badge">🤖 拍照·相册·可重做</span>
+        </div>
+    </div>
+    <div class="progress-wrap">
+        <span class="progress-text" id="progressLabel">第 1/5 题</span>
+        <div class="progress-bar">
+            <div class="progress-fill" id="progressFill" style="width:0%"></div>
+        </div>
+    </div>
+    <div class="main-content" id="mainContent"></div>
+</div>
+
+<script>
+(function() {
+    const questionBank = [
+        {
+            id: 1, level: 1, type: 'judge',
+            question: '🤖 <strong>AI包装质检员正在筛查一批展开图。</strong><br>下面哪个图形<strong>不是</strong>正方体表面展开图？',
+            shapes: [
+                { grid:[3,4], filled:[[0,1],[1,0],[1,1],[1,2],[1,3],[2,1]], label:'A' },
+                { grid:[3,4], filled:[[0,2],[1,0],[1,1],[1,2],[1,3],[2,1]], label:'B' },
+                { grid:[3,4], filled:[[0,0],[1,0],[1,1],[1,2],[1,3],[2,2]], label:'C' },
+                { grid:[3,4], filled:[[0,0],[0,1],[0,2],[1,1],[2,0],[2,1]], label:'D' }
+            ],
+            correct: 3,
+            aiCorrect: '✅ 正确！D是凹字形，无法围成正方体。',
+            aiWrong: '❌ D选项：第一行三个，中间只有一个，下面两个，形成凹陷。'
+        },
+        {
+            id: 2, level: 1, type: 'match',
+            question: '🧩 <strong>AI仓储系统需要将长方体包装盒与对应的展开图配对。</strong><br>请点击左侧长方体，再点击右侧对应的展开图，将它们连线。',
+            leftItems: [
+                { id: 'box1', name: '① 一般长方体', desc: '长120 宽50 高80', size: [120, 50, 80] },
+                { id: 'box2', name: '② 扁长方体', desc: '长150 宽150 高40', size: [150, 150, 40] },
+                { id: 'box3', name: '③ 竖长方体', desc: '长60 宽60 高140', size: [60, 60, 140] }
+            ],
+            rightItems: [
+                { id: 'net1', name: '甲', rects: [
+                    {w:120,h:50},{w:120,h:50},{w:120,h:80},{w:120,h:80},{w:50,h:80},{w:50,h:80}
+                ]},
+                { id: 'net2', name: '乙', rects: [
+                    {w:150,h:150},{w:150,h:150},{w:150,h:40},{w:150,h:40},{w:150,h:40},{w:150,h:40}
+                ]},
+                { id: 'net3', name: '丙', rects: [
+                    {w:60,h:60},{w:60,h:60},{w:60,h:140},{w:60,h:140},{w:60,h:140},{w:60,h:140}
+                ]}
+            ],
+            correctPairs: { box1: 'net1', box2: 'net2', box3: 'net3' },
+            aiCorrect: '✅ 完全正确！①一般长方体对应甲（三个不同尺寸面），②扁长方体对应乙（上下两面很大），③竖长方体对应丙（侧面为正方形且高度大）。',
+            aiWrong: '❌ 配对有误。注意：扁长方体上下两面最大且为正方形，竖长方体侧面是正方形且很高。'
+        },
+        {
+            // 第3题：222阶梯型
+            id: 3, level: 2, type: 'judge',
+            question: '📦 <strong>AI包装产线需要从四个候选图形中挑出能折成正方体的那张。</strong><br>下面哪个图形<strong>能</strong>折成正方体？',
+            shapes: [
+                { grid:[3,4], filled:[[0,0],[0,1],[1,1],[1,2],[2,2],[2,3]], label:'A' },
+                { grid:[3,4], filled:[[0,0],[0,1],[0,2],[1,1],[2,0],[2,1]], label:'B' },
+                { grid:[3,4], filled:[[0,0],[0,1],[1,0],[1,1],[2,0],[2,1]], label:'C' },
+                { grid:[3,4], filled:[[0,0],[1,0],[1,2],[2,0],[2,1],[2,2]], label:'D' }
+            ],
+            correct: 0,
+            aiCorrect: '✅ 太棒了！A是标准的222阶梯型，每行两个、三行错开，像楼梯一样，恰好围成立方体。',
+            aiWrong: '❌ 只有A能无重叠折叠，B凹形缺口，C田字重叠，D断开无法封闭。'
+        },
+        {
+            // 第4题：明和主对调
+            id: 4, level: 2, type: 'text-relation',
+            question: '🧠 <strong>AI视觉系统正在识别一个文字正方体展开图。</strong><br>折叠后，与"富"相对的字是哪一个？',
+            textGrid: {
+                grid:[3,4],
+                cells: [
+                    {pos:[0,1], text:'强', highlight:false},
+                    {pos:[1,0], text:'民', highlight:false},
+                    {pos:[1,1], text:'文', highlight:false},
+                    {pos:[1,2], text:'主', highlight:false},
+                    {pos:[1,3], text:'明', highlight:false},
+                    {pos:[2,1], text:'富', highlight:true}
+                ]
+            },
+            options: ['A. 强', 'B. 文', 'C. 明', 'D. 主'],
+            correct: 0, // A.强
+            aiCorrect: '✅ 完全正确！上下相对，富与强相对；中间行民与明相对，文与主相对。',
+            aiWrong: '❌ 观察展开图：上"强"与下"富"相对，中间四个字"民、文、主、明"中，民与明相对，文与主相对。所以富的对面是强。'
+        },
+        {
+            id: 5, level: 3, type: 'photo',
+            question: '📸 <strong>AI图形认证：</strong>请在一张白纸上画出<strong>任意一种</strong>正方体展开图（可以是141型、231型、222型、33型），然后拍照或从相册上传。AI会识别并判断是否正确。',
+            aiCorrect: '✅ AI识别结果：你画的展开图符合标准类型，已通过认证！',
+            aiWrong: '❌ AI识别结果：似乎不是标准展开图。请检查面数是否为6，有无重叠或缺口。'
+        }
+    ];
+
+    const TOTAL_QUESTIONS = 5;
+    let currentDifficulty = 2;
+    let answeredCount = 0;
+    let correctCount = 0;
+    let usedQuestionIds = new Set();
+    let currentQuestion = null;
+    let selectedOptionIndex = null;
+    let lockSelection = false;
+    let levelCorrect = {1:0, 2:0, 3:0};
+    let levelTotal = {1:0, 2:0, 3:0};
+
+    const mainContent = document.getElementById('mainContent');
+    const progressLabel = document.getElementById('progressLabel');
+    const progressFill = document.getElementById('progressFill');
+
+    function pickQuestionByLevel(level) {
+        const candidates = questionBank.filter(q => q.level === level && !usedQuestionIds.has(q.id));
+        if (candidates.length === 0) {
+            for (let l of [1,2,3]) {
+                if (l === level) continue;
+                const fb = questionBank.filter(q => q.level === l && !usedQuestionIds.has(q.id));
+                if (fb.length > 0) return fb[Math.floor(Math.random() * fb.length)];
+            }
+            usedQuestionIds.clear();
+            return pickQuestionByLevel(level);
+        }
+        return candidates[Math.floor(Math.random() * candidates.length)];
+    }
+
+    function renderGrid(shapeData) {
+        const [rows, cols] = shapeData.grid;
+        const grid = document.createElement('div');
+        grid.className = 'shape-grid';
+        grid.style.gridTemplateColumns = `repeat(${cols}, 24px)`;
+        grid.style.gridTemplateRows = `repeat(${rows}, 24px)`;
+
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                const cell = document.createElement('div');
+                cell.className = 'cell';
+                const isFilled = shapeData.filled?.some(([fr, fc]) => fr === r && fc === c);
+                const textObj = shapeData.cells?.find(tc => tc.pos[0]===r && tc.pos[1]===c);
+                const isHighlight = textObj?.highlight;
+
+                if (textObj) {
+                    cell.classList.add('text-cell');
+                    cell.textContent = textObj.text;
+                    if (isHighlight) cell.classList.add('highlight');
+                } else if (isFilled) {
+                    cell.classList.add('filled');
+                }
+                grid.appendChild(cell);
+            }
+        }
+        return grid;
+    }
+
+    // 绘制立体图
+    function drawCuboid(canvas, size) {
+        const [w, d, h] = size;
+        const ctx = canvas.getContext('2d');
+        canvas.width = 180;
+        canvas.height = 150;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const offsetX = 35;
+        const offsetY = 28;
+        const scale = 0.4;
+
+        const frontWidth = w * scale;
+        const frontHeight = h * scale;
+        const frontX = 40;
+        const frontY = canvas.height - 45 - frontHeight;
+
+        const backX = frontX + offsetX;
+        const backY = frontY - offsetY;
+
+        ctx.fillStyle = '#4a6cf7';
+        ctx.strokeStyle = '#1e293b';
+        ctx.lineWidth = 2;
+        ctx.fillRect(frontX, frontY, frontWidth, frontHeight);
+        ctx.strokeRect(frontX, frontY, frontWidth, frontHeight);
+
+        ctx.fillStyle = '#7b93f5';
+        ctx.beginPath();
+        ctx.moveTo(frontX, frontY);
+        ctx.lineTo(backX, backY);
+        ctx.lineTo(backX + frontWidth, backY);
+        ctx.lineTo(frontX + frontWidth, frontY);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#5a7af0';
+        ctx.beginPath();
+        ctx.moveTo(frontX + frontWidth, frontY);
+        ctx.lineTo(backX + frontWidth, backY);
+        ctx.lineTo(backX + frontWidth, backY + frontHeight);
+        ctx.lineTo(frontX + frontWidth, frontY + frontHeight);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.strokeStyle = '#94a3b8';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.moveTo(backX, backY + frontHeight);
+        ctx.lineTo(backX + frontWidth, backY + frontHeight);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(backX, backY);
+        ctx.lineTo(backX, backY + frontHeight);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(frontX, frontY + frontHeight);
+        ctx.lineTo(backX, backY + frontHeight);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.font = 'bold 12px "Microsoft YaHei"';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        function drawLabel(text, x, y) {
+            const metrics = ctx.measureText(text);
+            const padding = 6;
+            const labelWidth = metrics.width + padding * 2;
+            const labelHeight = 18;
+            ctx.fillStyle = 'rgba(255,255,255,0.9)';
+            ctx.fillRect(x - labelWidth/2, y - labelHeight/2, labelWidth, labelHeight);
+            ctx.fillStyle = '#0f172a';
+            ctx.fillText(text, x, y);
+        }
+
+        drawLabel(`长${w}`, frontX + frontWidth/2, frontY + frontHeight + 24);
+        drawLabel(`高${h}`, frontX + frontWidth + 35, frontY + frontHeight/2);
+        let widthLabelY = backY - 20;
+        if (widthLabelY < 15) widthLabelY = backY + 12;
+        drawLabel(`宽${d}`, backX + frontWidth/2 - 5, widthLabelY);
+
+        ctx.textAlign = 'start';
+        ctx.textBaseline = 'alphabetic';
+    }
+
+    // 绘制展开图（动态高度）
+    function drawNet(canvas, rects) {
+        const ctx = canvas.getContext('2d');
+        const gap = 5;
+        const margin = 5;
+        const scale = 0.3;
+
+        let totalHeight = 0;
+        rects.forEach(r => {
+            totalHeight += r.h * scale + gap;
+        });
+        totalHeight -= gap;
+
+        canvas.width = 160;
+        canvas.height = totalHeight + margin * 2;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        let y = margin;
+        rects.forEach((r) => {
+            const width = r.w * scale;
+            const height = r.h * scale;
+            const x = (canvas.width - width) / 2;
+
+            ctx.fillStyle = '#e0e7ff';
+            ctx.strokeStyle = '#4a6cf7';
+            ctx.lineWidth = 1.5;
+            const radius = 4;
+            ctx.beginPath();
+            ctx.moveTo(x + radius, y);
+            ctx.lineTo(x + width - radius, y);
+            ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+            ctx.lineTo(x + width, y + height - radius);
+            ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+            ctx.lineTo(x + radius, y + height);
+            ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+            ctx.lineTo(x, y + radius);
+            ctx.quadraticCurveTo(x, y, x + radius, y);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.font = 'bold 11px "Microsoft YaHei"';
+            ctx.fillStyle = '#0f172a';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`${r.w}×${r.h}`, x + width/2, y + height/2);
+            ctx.textAlign = 'start';
+            ctx.textBaseline = 'alphabetic';
+
+            y += height + gap;
+        });
+    }
+
+    let currentResetFunction = null;
+
+    function renderQuestionCard(q) {
+        const card = document.createElement('div');
+        card.className = 'question-card active';
+        card.dataset.qid = q.id;
+
+        const titleDiv = document.createElement('div');
+        titleDiv.className = 'q-title';
+        titleDiv.innerHTML = `${q.question} <span class="difficulty-tag">难度 L${q.level}</span>`;
+        card.appendChild(titleDiv);
+
+        if (q.type === 'judge') {
+            const optionsDiv = document.createElement('div');
+            optionsDiv.className = 'options';
+            q.shapes.forEach((shape, idx) => {
+                const optDiv = document.createElement('div');
+                optDiv.className = 'option';
+                optDiv.dataset.index = idx;
+                const labelSpan = document.createElement('span');
+                labelSpan.className = 'option-label';
+                labelSpan.textContent = String.fromCharCode(65 + idx);
+                optDiv.appendChild(labelSpan);
+                optDiv.appendChild(renderGrid(shape));
+                optDiv.addEventListener('click', () => onOptionClick(optDiv, idx));
+                optionsDiv.appendChild(optDiv);
+            });
+            card.appendChild(optionsDiv);
+
+            currentResetFunction = () => {
+                lockSelection = false;
+                selectedOptionIndex = null;
+                document.querySelectorAll('.option').forEach(opt => {
+                    opt.classList.remove('selected', 'correct-feedback', 'wrong-feedback');
+                    opt.style.pointerEvents = 'auto';
+                });
+                document.getElementById('feedbackArea').classList.remove('show');
+                document.getElementById('nextBtn').classList.remove('show');
+                document.getElementById('redoBtn')?.remove();
+            };
+        } else if (q.type === 'match') {
+            const container = document.createElement('div');
+            container.className = 'match-vertical';
+            
+            const topSection = document.createElement('div');
+            topSection.className = 'match-section';
+            topSection.innerHTML = '<h3>长方体立体图（点击选择）</h3>';
+            const topRow = document.createElement('div');
+            topRow.className = 'match-items-row';
+            q.leftItems.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'match-item left-item';
+                div.dataset.id = item.id;
+                const canvas = document.createElement('canvas');
+                drawCuboid(canvas, item.size);
+                div.appendChild(canvas);
+                const label = document.createElement('div');
+                label.innerHTML = `<strong>${item.name}</strong><br><small>${item.desc}</small>`;
+                div.appendChild(label);
+                topRow.appendChild(div);
+            });
+            topSection.appendChild(topRow);
+            container.appendChild(topSection);
+
+            const bottomSection = document.createElement('div');
+            bottomSection.className = 'match-section';
+            bottomSection.innerHTML = '<h3>展开图（点击选择）</h3>';
+            const bottomRow = document.createElement('div');
+            bottomRow.className = 'match-items-row';
+            q.rightItems.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'match-item right-item';
+                div.dataset.id = item.id;
+                const nameDiv = document.createElement('div');
+                nameDiv.innerHTML = `<strong>${item.name}</strong>`;
+                div.appendChild(nameDiv);
+                const canvas = document.createElement('canvas');
+                drawNet(canvas, item.rects);
+                div.appendChild(canvas);
+                bottomRow.appendChild(div);
+            });
+            bottomSection.appendChild(bottomRow);
+            container.appendChild(bottomSection);
+
+            card.appendChild(container);
+
+            const pairLines = document.createElement('div');
+            pairLines.className = 'match-pair-lines';
+            pairLines.id = 'pairLines';
+            card.appendChild(pairLines);
+
+            let selectedLeft = null, selectedRight = null;
+            const pairs = {};
+
+            function resetMatch() {
+                selectedLeft = null; selectedRight = null;
+                for (const k in pairs) delete pairs[k];
+                lockSelection = false;
+                document.querySelectorAll('.match-item').forEach(el => {
+                    el.classList.remove('selected', 'paired', 'wrong-pair');
+                    el.style.pointerEvents = 'auto';
+                });
+                pairLines.textContent = '';
+                document.getElementById('feedbackArea').classList.remove('show');
+                document.getElementById('nextBtn').classList.remove('show');
+                document.getElementById('redoBtn')?.remove();
+            }
+
+            currentResetFunction = resetMatch;
+
+            function checkComplete() {
+                if (Object.keys(pairs).length === 3) {
+                    let allCorrect = true;
+                    for (const leftId in pairs) {
+                        if (pairs[leftId] !== q.correctPairs[leftId]) {
+                            allCorrect = false;
+                            break;
+                        }
+                    }
+                    lockSelection = true;
+                    document.querySelectorAll('.match-item').forEach(el => el.style.pointerEvents = 'none');
+                    for (const leftId in pairs) {
+                        const leftEl = document.querySelector(`.left-item[data-id="${leftId}"]`);
+                        const rightEl = document.querySelector(`.right-item[data-id="${pairs[leftId]}"]`);
+                        if (pairs[leftId] === q.correctPairs[leftId]) {
+                            leftEl.classList.add('paired');
+                            rightEl.classList.add('paired');
+                        } else {
+                            leftEl.classList.add('wrong-pair');
+                            rightEl.classList.add('wrong-pair');
+                        }
+                    }
+                    processResult(allCorrect);
+                }
+            }
+
+            function updatePairText() {
+                const texts = [];
+                for (const leftId in pairs) {
+                    const leftName = q.leftItems.find(i => i.id === leftId).name;
+                    const rightName = q.rightItems.find(i => i.id === pairs[leftId]).name;
+                    texts.push(`${leftName} ↔ ${rightName}`);
+                }
+                pairLines.textContent = texts.join('  |  ');
+            }
+
+            card.addEventListener('click', (e) => {
+                if (lockSelection) return;
+                const item = e.target.closest('.match-item');
+                if (!item) return;
+                if (item.classList.contains('left-item')) {
+                    if (selectedLeft) selectedLeft.classList.remove('selected');
+                    if (item.classList.contains('paired')) return;
+                    selectedLeft = item;
+                    selectedLeft.classList.add('selected');
+                } else if (item.classList.contains('right-item')) {
+                    if (selectedRight) selectedRight.classList.remove('selected');
+                    if (item.classList.contains('paired')) return;
+                    selectedRight = item;
+                    selectedRight.classList.add('selected');
+                }
+                if (selectedLeft && selectedRight) {
+                    const leftId = selectedLeft.dataset.id;
+                    const rightId = selectedRight.dataset.id;
+                    if (pairs[leftId] || Object.values(pairs).includes(rightId)) {
+                        selectedLeft.classList.remove('selected');
+                        selectedRight.classList.remove('selected');
+                        selectedLeft = null;
+                        selectedRight = null;
+                        return;
+                    }
+                    pairs[leftId] = rightId;
+                    selectedLeft.classList.add('paired');
+                    selectedRight.classList.add('paired');
+                    selectedLeft.classList.remove('selected');
+                    selectedRight.classList.remove('selected');
+                    selectedLeft = null;
+                    selectedRight = null;
+                    updatePairText();
+                    checkComplete();
+                }
+            });
+        } else if (q.type === 'text-relation') {
+            if (q.textGrid) {
+                const gridContainer = document.createElement('div');
+                gridContainer.style.marginBottom = '12px';
+                gridContainer.appendChild(renderGrid(q.textGrid));
+                card.appendChild(gridContainer);
+            }
+            const optionsDiv = document.createElement('div');
+            optionsDiv.className = 'options';
+            q.options.forEach((text, idx) => {
+                const optDiv = document.createElement('div');
+                optDiv.className = 'option';
+                optDiv.dataset.index = idx;
+                optDiv.innerHTML = `<span class="option-label">${String.fromCharCode(65+idx)}</span> ${text}`;
+                optDiv.addEventListener('click', () => onOptionClick(optDiv, idx));
+                optionsDiv.appendChild(optDiv);
+            });
+            card.appendChild(optionsDiv);
+
+            currentResetFunction = () => {
+                lockSelection = false;
+                selectedOptionIndex = null;
+                document.querySelectorAll('.option').forEach(opt => {
+                    opt.classList.remove('selected', 'correct-feedback', 'wrong-feedback');
+                    opt.style.pointerEvents = 'auto';
+                });
+                document.getElementById('feedbackArea').classList.remove('show');
+                document.getElementById('nextBtn').classList.remove('show');
+                document.getElementById('redoBtn')?.remove();
+            };
+        } else if (q.type === 'photo') {
+            const uploadArea = document.createElement('div');
+            uploadArea.className = 'photo-upload-area';
+            const preview = document.createElement('img');
+            preview.style.display = 'none';
+            const video = document.createElement('video');
+            video.autoplay = true;
+            video.style.display = 'none';
+            const canvas = document.createElement('canvas');
+            canvas.style.display = 'none';
+            uploadArea.innerHTML = '<p>📷 请拍照或从相册选择图片</p>';
+            uploadArea.appendChild(preview);
+            uploadArea.appendChild(video);
+            uploadArea.appendChild(canvas);
+            card.appendChild(uploadArea);
+
+            const btnGroup = document.createElement('div');
+            btnGroup.className = 'upload-buttons';
+
+            const fileInput = document.createElement('input');
+            fileInput.type = 'file';
+            fileInput.accept = 'image/*';
+            fileInput.style.display = 'none';
+
+            const albumBtn = document.createElement('button');
+            albumBtn.className = 'upload-btn';
+            albumBtn.textContent = '🖼️ 相册上传';
+            albumBtn.addEventListener('click', () => fileInput.click());
+
+            const cameraBtn = document.createElement('button');
+            cameraBtn.className = 'upload-btn';
+            cameraBtn.textContent = '📸 拍照上传';
+
+            const submitBtn = document.createElement('button');
+            submitBtn.className = 'upload-btn';
+            submitBtn.textContent = '✅ 提交识别';
+            submitBtn.disabled = true;
+
+            let uploadedImage = null;
+
+            fileInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    preview.src = ev.target.result;
+                    preview.style.display = 'block';
+                    video.style.display = 'none';
+                    canvas.style.display = 'none';
+                    uploadedImage = ev.target.result;
+                    submitBtn.disabled = false;
+                };
+                reader.readAsDataURL(file);
+            });
+
+            let stream = null;
+            cameraBtn.addEventListener('click', async () => {
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                    video.srcObject = stream;
+                    video.style.display = 'block';
+                    preview.style.display = 'none';
+                    canvas.style.display = 'none';
+                    cameraBtn.textContent = '📷 点击拍摄';
+                    cameraBtn.onclick = () => {
+                        if (!stream) return;
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(video, 0, 0);
+                        video.style.display = 'none';
+                        canvas.style.display = 'block';
+                        uploadedImage = canvas.toDataURL('image/png');
+                        submitBtn.disabled = false;
+                        if (stream) {
+                            stream.getTracks().forEach(track => track.stop());
+                            stream = null;
+                        }
+                        cameraBtn.textContent = '📸 重新拍照';
+                    };
+                } catch (err) {
+                    alert('无法访问摄像头，请检查权限或使用相册上传。');
+                }
+            });
+
+            submitBtn.addEventListener('click', () => {
+                if (!uploadedImage || lockSelection) return;
+                lockSelection = true;
+                albumBtn.disabled = true;
+                cameraBtn.disabled = true;
+                submitBtn.disabled = true;
+                const randomCorrect = Math.random() > 0.3;
+                processResult(randomCorrect);
+            });
+
+            currentResetFunction = () => {
+                lockSelection = false;
+                uploadedImage = null;
+                preview.style.display = 'none';
+                video.style.display = 'none';
+                canvas.style.display = 'none';
+                albumBtn.disabled = false;
+                cameraBtn.disabled = false;
+                submitBtn.disabled = true;
+                fileInput.value = '';
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                    stream = null;
+                }
+                cameraBtn.textContent = '📸 拍照上传';
+                document.getElementById('feedbackArea').classList.remove('show');
+                document.getElementById('nextBtn').classList.remove('show');
+                document.getElementById('redoBtn')?.remove();
+            };
+
+            btnGroup.appendChild(albumBtn);
+            btnGroup.appendChild(cameraBtn);
+            btnGroup.appendChild(submitBtn);
+            card.appendChild(btnGroup);
+        }
+
+        const feedbackDiv = document.createElement('div');
+        feedbackDiv.className = 'feedback-area';
+        feedbackDiv.id = 'feedbackArea';
+        card.appendChild(feedbackDiv);
+
+        const nextBtn = document.createElement('button');
+        nextBtn.className = 'next-btn';
+        nextBtn.id = 'nextBtn';
+        nextBtn.textContent = '下一题 ▶';
+        nextBtn.addEventListener('click', goToNextQuestion);
+        card.appendChild(nextBtn);
+
+        return card;
+    }
+
+    function onOptionClick(optDiv, index) {
+        if (lockSelection) return;
+        document.querySelectorAll('.option').forEach(opt => opt.classList.remove('selected'));
+        optDiv.classList.add('selected');
+        selectedOptionIndex = index;
+        submitChoiceAnswer();
+    }
+
+    function submitChoiceAnswer() {
+        if (lockSelection || selectedOptionIndex === null) return;
+        lockSelection = true;
+        const isCorrect = (selectedOptionIndex === currentQuestion.correct);
+        processResult(isCorrect);
+        const options = document.querySelectorAll('.option');
+        options.forEach((opt, idx) => {
+            opt.style.pointerEvents = 'none';
+            if (idx === currentQuestion.correct) opt.classList.add('correct-feedback');
+            else if (idx === selectedOptionIndex && !isCorrect) opt.classList.add('wrong-feedback');
+        });
+    }
+
+    function processResult(isCorrect) {
+        if (isCorrect) correctCount++;
+        const lvl = currentQuestion.level;
+        levelTotal[lvl] = (levelTotal[lvl] || 0) + 1;
+        if (isCorrect) levelCorrect[lvl] = (levelCorrect[lvl] || 0) + 1;
+
+        const feedbackDiv = document.getElementById('feedbackArea');
+        feedbackDiv.className = 'feedback-area show ' + (isCorrect ? 'correct' : 'wrong');
+        feedbackDiv.innerHTML = isCorrect ? currentQuestion.aiCorrect : currentQuestion.aiWrong;
+
+        const redoBtn = document.createElement('button');
+        redoBtn.className = 'redo-btn';
+        redoBtn.id = 'redoBtn';
+        redoBtn.textContent = '🔄 重新作答';
+        redoBtn.addEventListener('click', () => {
+            if (currentResetFunction) currentResetFunction();
+        });
+        feedbackDiv.appendChild(redoBtn);
+
+        document.getElementById('nextBtn').classList.add('show');
+    }
+
+    function goToNextQuestion() {
+        answeredCount++;
+        const progress = Math.min((answeredCount / TOTAL_QUESTIONS) * 100, 100);
+        progressFill.style.width = progress + '%';
+        progressLabel.textContent = `第 ${Math.min(answeredCount+1, TOTAL_QUESTIONS)}/${TOTAL_QUESTIONS} 题`;
+
+        if (answeredCount > 0) {
+            const lastWasCorrect = (correctCount > (answeredCount - 1));
+            if (lastWasCorrect) currentDifficulty = Math.min(3, currentDifficulty + 1);
+            else currentDifficulty = Math.max(1, currentDifficulty - 1);
+        }
+
+        if (answeredCount >= TOTAL_QUESTIONS) {
+            showResultScreen();
+            return;
+        }
+
+        usedQuestionIds.add(currentQuestion.id);
+        currentQuestion = pickQuestionByLevel(currentDifficulty);
+        selectedOptionIndex = null;
+        lockSelection = false;
+        currentResetFunction = null;
+        mainContent.innerHTML = '';
+        const newCard = renderQuestionCard(currentQuestion);
+        mainContent.appendChild(newCard);
+    }
+
+    function showResultScreen() {
+        mainContent.innerHTML = '';
+        const resultDiv = document.createElement('div');
+        resultDiv.className = 'result-screen active';
+
+        const scoreCircle = document.createElement('div');
+        scoreCircle.className = 'score-circle';
+        scoreCircle.textContent = `${correctCount}/${TOTAL_QUESTIONS}`;
+        resultDiv.appendChild(scoreCircle);
+
+        const title = document.createElement('h2');
+        title.style.margin = '10px 0';
+        title.textContent = correctCount === TOTAL_QUESTIONS ? '🌟 太出色了！' : (correctCount >= 3 ? '👍 表现不错！' : '💪 继续加油！');
+        resultDiv.appendChild(title);
+
+        const radarBox = document.createElement('div');
+        radarBox.className = 'radar-box';
+        ['基础判断', '空间推理', '操作创造'].forEach((label, idx) => {
+            const lvl = idx + 1;
+            const percent = levelTotal[lvl] ? Math.round((levelCorrect[lvl] / levelTotal[lvl]) * 100) : 0;
+            const item = document.createElement('div');
+            item.className = 'radar-item';
+            item.innerHTML = `
+                <div class="radar-label">${label}</div>
+                <div class="radar-bar"><div class="radar-fill" style="width:${percent}%"></div></div>
+                <div style="font-size:11px; margin-top:3px;">${percent}%</div>
+            `;
+            radarBox.appendChild(item);
+        });
+        resultDiv.appendChild(radarBox);
+
+        const aiComment = document.createElement('div');
+        aiComment.className = 'ai-comment';
+        let comment = correctCount === TOTAL_QUESTIONS ? '你已经具备AI包装设计师的空间思维水平！' :
+                      correctCount >= 3 ? '你的空间感不错，多练习几种展开图就能通过认证！' :
+                      '建议用纸片实际剪折几次，AI助手相信你很快就能建立空间直觉。';
+        aiComment.innerHTML = `🤖 AI学习助手：${comment}`;
+        resultDiv.appendChild(aiComment);
+
+        const restartBtn = document.createElement('button');
+        restartBtn.className = 'next-btn show';
+        restartBtn.style.marginTop = '15px';
+        restartBtn.textContent = '🔄 重新挑战';
+        restartBtn.addEventListener('click', () => location.reload());
+        resultDiv.appendChild(restartBtn);
+
+        mainContent.appendChild(resultDiv);
+        progressLabel.textContent = `完成 ${TOTAL_QUESTIONS}/${TOTAL_QUESTIONS}`;
+        progressFill.style.width = '100%';
+    }
+
+    function init() {
+        currentQuestion = pickQuestionByLevel(currentDifficulty);
+        usedQuestionIds.add(currentQuestion.id);
+        const card = renderQuestionCard(currentQuestion);
+        mainContent.appendChild(card);
+        progressLabel.textContent = `第 1/${TOTAL_QUESTIONS} 题`;
+        progressFill.style.width = '0%';
+    }
+
+    init();
+})();
+</script>
+</body>
+</html>
